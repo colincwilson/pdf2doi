@@ -1,13 +1,15 @@
 import argparse
+import ast
+import io
+import json
 import logging
 from os import path, listdir
 import pdf2doi.finders as finders
 import pdf2doi.config as config
-import io
-
 
 # import easygui Modules that are commented here are imported later only when needed, to improve start up time
 # import pyperclip
+
 
 def pdf2doi(target):
     ''' This is the main routine of the library. When the library is used as a command-line tool (via the entry-point "pdf2doi") the input arguments
@@ -48,7 +50,7 @@ def pdf2doi(target):
 
     # Make sure the path is a string in case a Pathlib object is provided
     target = str(target)
-    
+
     # Check if path is valid
     if not (path.exists(target)):
         logger.error(f"{target} is not a valid path to a file or a directory.")
@@ -59,7 +61,9 @@ def pdf2doi(target):
     # we call again this function
     if path.isdir(target):
         logger.info(f"Looking for pdf files in the folder {target}...")
-        pdf_files = [f for f in listdir(target) if (f.lower()).endswith('.pdf')]
+        pdf_files = [
+            f for f in listdir(target) if (f.lower()).endswith('.pdf')
+        ]
         numb_files = len(pdf_files)
 
         if numb_files == 0:
@@ -68,7 +72,8 @@ def pdf2doi(target):
 
         logger.info(f"Found {numb_files} pdf files.")
 
-        identifiers_found = []  # For each pdf file in the target folder we will store a dictionary inside this list
+        identifiers_found = [
+        ]  # For each pdf file in the target folder we will store a dictionary inside this list
         for f in pdf_files:
             logger.info("................")
             file = path.join(target, f)
@@ -84,7 +89,8 @@ def pdf2doi(target):
     # If target is not a directory, we check that it is an existing file and that it ends with .pdf
     else:
         filename = target
-        logger.info(f"Trying to retrieve a DOI/identifier for the file: {filename}")
+        logger.info(
+            f"Trying to retrieve a DOI/identifier for the file: {filename}")
         if not path.exists(filename):
             logger.error(f"'{filename}' is not a valid file.")
             return None
@@ -93,11 +99,35 @@ def pdf2doi(target):
             return None
         result = pdf2doi_singlefile(filename)
         if result['identifier'] == None:
-            logger.error("It was not possible to find a valid identifier for this file.")
+            logger.error(
+                "It was not possible to find a valid identifier for this file."
+            )
 
         if (config.get('save_identifier_metadata')) == True:
-            if result['identifier'] and not (result['method'] == "document_infos"):
-                finders.add_found_identifier_to_metadata(filename, result['identifier'])
+            if result['identifier'] and not (result['method']
+                                             == "document_infos"):
+                finders.add_found_identifier_to_metadata(
+                    filename, result['identifier'])
+
+        try:
+            bibtex = result['validation_info']
+            #bibtex = ast.literal_eval(bibtex)
+            bibtex = json.loads(bibtex)
+            print(bibtex.keys())
+            keys = [
+                'title', 'author', 'journal', 'container-title', 'year',
+                'volume', 'issue', 'page', 'URL', 'DOI', 'type'
+            ]
+            bibtex = {k: bibtex[k] for k in keys if k in bibtex}
+            bibtex_str = json.dumps(bibtex, indent=2)
+            print(bibtex_str)
+            # for key in ['title', 'author', 'year']:
+            #     print(bibtex[key])
+            print(result['identifier'])
+            print(result['identifier_type'])
+        except Exception as e:
+            print(e)
+            pass
 
         return result  # This will be a dictionary with all entries as None
 
@@ -152,19 +182,25 @@ def __find_doi(file: io.IOBase) -> dict:
     # via the getDocumentInfo() method of the library PyPdf) and see if any of them is a string which containts a
     # valid identifier inside it. We first look for the elements of the dictionary with keys '/doi' or /pdf2doi_identifier'(if the they exist),
     # and then any other field of the dictionary
-    logger.info(f"Method #1: Looking for a valid identifier in the document infos...")
-    result = finders.find_identifier(file, method="document_infos", keysToCheckFirst=['/doi', '/pdf2doi_identifier'])
+    logger.info(
+        f"Method #1: Looking for a valid identifier in the document infos...")
+    result = finders.find_identifier(
+        file,
+        method="document_infos",
+        keysToCheckFirst=['/doi', '/pdf2doi_identifier'])
     if result['identifier']:
         return result
 
     # Second method: We look for a DOI or arxiv ID inside the filename
-    logger.info(f"Method #2: Looking for a valid identifier in the file name...")
+    logger.info(
+        f"Method #2: Looking for a valid identifier in the file name...")
     result = finders.find_identifier(file, method="filename")
     if result['identifier']:
         return result
 
     # Third method: We look in the plain text of the pdf and try to find something that matches a valid identifier.
-    logger.info(f"Method #3: Looking for a valid identifier in the document text...")
+    logger.info(
+        f"Method #3: Looking for a valid identifier in the document text...")
     result = finders.find_identifier(file, method="document_text")
     if result['identifier']:
         return result
@@ -179,14 +215,15 @@ def __find_doi(file: io.IOBase) -> dict:
     # Fifth method: We extract the first N characters from the file (where N is set by config.get('N_characters_in_pdf')) and we use it as
     # a query for a google seaerch. We open the first results and look for identifiers in the plain text of the searcg results.
     logger.info(
-        f"Method #5: Trying to do a google search with the first {config.get('N_characters_in_pdf')} characters of this pdf file...")
+        f"Method #5: Trying to do a google search with the first {config.get('N_characters_in_pdf')} characters of this pdf file..."
+    )
     result = finders.find_identifier(file, method="first_N_characters_google")
     if result['identifier']:
         return result
 
     #If execution arrived to this point, it means that no identifier was found. We still return the dictionary returned by the last attempt, for further processing
     #In this case result['identifier']=None
-    return result 
+    return result
 
 
 def save_identifiers(filename_identifiers, results, clipboard=False):
@@ -210,21 +247,30 @@ def save_identifiers(filename_identifiers, results, clipboard=False):
 
     # If a string was passed via the args.filename_identifiers, we create the full path of the file where identifiers will be saved
     if isinstance(filename_identifiers, str):
-        path_filename_identifiers = path.dirname(results[0]['path']) + config.get('separator') + filename_identifiers
+        path_filename_identifiers = path.dirname(
+            results[0]['path']) + config.get(
+                'separator') + filename_identifiers
         try:
             text = ''
             for result in results:
                 if result['validation_info']:
-                    text = text + '{:<15s} {:<40s} {:<10s}\n'.format(result['identifier_type'], result['identifier'],
-                                                                     result['path'])
+                    text = text + '{:<15s} {:<40s} {:<10s}\n'.format(
+                        result['identifier_type'], result['identifier'],
+                        result['path'])
                 else:
-                    text = text + '{:<15s} {:<40s} {:<10s}\n'.format('n.a.', 'n.a.', result['path'])
-            with open(path_filename_identifiers, "w", encoding="utf-8") as text_file:
+                    text = text + '{:<15s} {:<40s} {:<10s}\n'.format(
+                        'n.a.', 'n.a.', result['path'])
+            with open(path_filename_identifiers, "w",
+                      encoding="utf-8") as text_file:
                 text_file.write(text)
-            logger.info(f'All found identifiers were saved in the file {filename_identifiers}')
+            logger.info(
+                f'All found identifiers were saved in the file {filename_identifiers}'
+            )
         except Exception as e:
             logger.error(e)
-            logger.error(f'A problem occurred when trying to write into the file {filename_identifiers}')
+            logger.error(
+                f'A problem occurred when trying to write into the file {filename_identifiers}'
+            )
 
     # If clipboard is set to true, we copy all identifiers into the clipboard
     if clipboard:
@@ -235,78 +281,114 @@ def save_identifiers(filename_identifiers, results, clipboard=False):
                 if result['validation_info']:
                     text = text + result['identifier'] + '\n'
             pyperclip.copy(text)
-            logger.info(f'All found identifiers have been stored in the system clipboard')
+            logger.info(
+                f'All found identifiers have been stored in the system clipboard'
+            )
         except Exception as e:
             logger.error(e)
-            logger.error(f'A problem occurred when trying to write into the system clipboard')
+            logger.error(
+                f'A problem occurred when trying to write into the system clipboard'
+            )
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Retrieves the DOI or other identifiers (e.g. arXiv) from pdf files of a publications.",
+        description=
+        "Retrieves the DOI or other identifiers (e.g. arXiv) from pdf files of a publications.",
         epilog="")
 
-    parser.add_argument("path",
-                        help="Relative path of the target pdf file or of the targe folder.",
-                        metavar="path",
-                        nargs='*')
-    parser.add_argument("-v",
-                        "--verbose",
-                        help="Increase verbosity. By default (i.e. when not using -v), only a table with the found identifiers will be printed as output.",
-                        action="store_true")
-    parser.add_argument("-nws",
-                        "--no_web_search",
-                        help="Disable any method to find identifiers which requires internet searches (e.g. queries to google).",
-                        action="store_true")
-    parser.add_argument("-nwv",
-                        "--no_web_validation",
-                        help="Disable the online validation of identifiers (e.g., via queries to http://dx.doi.org/).",
-                        action="store_true")
-    parser.add_argument("-nostore",
-                        "--no_store_identifier_metadata",
-                        help="By default, anytime an identifier is found, it is added to the metadata of the pdf file (if not present yet). By using this additional option, the identifier is not stored in the file metadata.",
-                        action="store_true")
-    parser.add_argument("-no_arxiv2doi",
-                        help="If a valid arXiv ID is found for a given .pdf file, by default pdf2doi will try to also look for a DOI (either because the paper has been published in a journal or because arXiv has assigned to it a DOI of the form \"10.48550/arXivID\")." +
-                            " By adding this command, the arXiv ID is instead always returned.",
-                        action="store_true")
-    parser.add_argument('-id',
-                        help=f"Stores the string IDENTIFIER in the metadata of the target pdf file, with key \'/pdf2doi_identifier\'. Note: when this argument is passed, all other arguments (except for the path to the pdf file)" +
-                             " are ignored. ",
-                        action="store", dest="identifier", type=str, default=False)
-    parser.add_argument("-id_input_box",  # When called with this argument, an input box is generated in order
-                        # to acquire a string from the user, which is then stored in the metadata
-                        # of the target pdf file
-                        # This is normally used when calling pdf2doi by right-clicking on a .pdf file in Windows
-                        help=argparse.SUPPRESS,
-                        action="store_true")
-    parser.add_argument('-google',
-                        help=f"Set how many results should be considered when doing a google search for the DOI (default={str(config.get('numb_results_google_search'))}).",
-                        action="store", dest="google_results", type=int)
-    parser.add_argument("-s",
-                        "--save_identifiers_file",
-                        dest="filename_identifiers",
-                        help="Save all the identifiers found in the target folder in a text file inside the same folder with name specified by FILENAME_IDENTIFIERS. This option is only available when a folder is targeted.",
-                        action="store")
-    parser.add_argument("-clip",
-                        "--save_doi_clipboard",
-                        action="store_true",
-                        help="Store all found DOI/identifiers into the clipboard.")
+    parser.add_argument(
+        "path",
+        help="Relative path of the target pdf file or of the targe folder.",
+        metavar="path",
+        nargs='*')
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        help=
+        "Increase verbosity. By default (i.e. when not using -v), only a table with the found identifiers will be printed as output.",
+        action="store_true")
+    parser.add_argument(
+        "-nws",
+        "--no_web_search",
+        help=
+        "Disable any method to find identifiers which requires internet searches (e.g. queries to google).",
+        action="store_true")
+    parser.add_argument(
+        "-nwv",
+        "--no_web_validation",
+        help=
+        "Disable the online validation of identifiers (e.g., via queries to http://dx.doi.org/).",
+        action="store_true")
+    parser.add_argument(
+        "-nostore",
+        "--no_store_identifier_metadata",
+        help=
+        "By default, anytime an identifier is found, it is added to the metadata of the pdf file (if not present yet). By using this additional option, the identifier is not stored in the file metadata.",
+        action="store_true")
+    parser.add_argument(
+        "-no_arxiv2doi",
+        help=
+        "If a valid arXiv ID is found for a given .pdf file, by default pdf2doi will try to also look for a DOI (either because the paper has been published in a journal or because arXiv has assigned to it a DOI of the form \"10.48550/arXivID\")."
+        + " By adding this command, the arXiv ID is instead always returned.",
+        action="store_true")
+    parser.add_argument(
+        '-id',
+        help=
+        f"Stores the string IDENTIFIER in the metadata of the target pdf file, with key \'/pdf2doi_identifier\'. Note: when this argument is passed, all other arguments (except for the path to the pdf file)"
+        + " are ignored. ",
+        action="store",
+        dest="identifier",
+        type=str,
+        default=False)
+    parser.add_argument(
+        "-id_input_box",  # When called with this argument, an input box is generated in order
+        # to acquire a string from the user, which is then stored in the metadata
+        # of the target pdf file
+        # This is normally used when calling pdf2doi by right-clicking on a .pdf file in Windows
+        help=argparse.SUPPRESS,
+        action="store_true")
+    parser.add_argument(
+        '-google',
+        help=
+        f"Set how many results should be considered when doing a google search for the DOI (default={str(config.get('numb_results_google_search'))}).",
+        action="store",
+        dest="google_results",
+        type=int)
+    parser.add_argument(
+        "-s",
+        "--save_identifiers_file",
+        dest="filename_identifiers",
+        help=
+        "Save all the identifiers found in the target folder in a text file inside the same folder with name specified by FILENAME_IDENTIFIERS. This option is only available when a folder is targeted.",
+        action="store")
+    parser.add_argument(
+        "-clip",
+        "--save_doi_clipboard",
+        action="store_true",
+        help="Store all found DOI/identifiers into the clipboard.")
 
-    parser.add_argument("-install--right--click",
-                        dest="install_right_click",
-                        action="store_true",
-                        help="Add a shortcut to pdf2doi in the right-click context menu of Windows. You can copy the identifier and/or bibtex entry of a pdf file (or all pdf files in a folder) into the clipboard by just right clicking on it! NOTE: this feature is only available on Windows.")
-    parser.add_argument("-uninstall--right--click",
-                        dest="uninstall_right_click",
-                        action="store_true",
-                        help="Uninstall the right-click context menu functionalities. NOTE: this feature is only available on Windows.")
+    parser.add_argument(
+        "-install--right--click",
+        dest="install_right_click",
+        action="store_true",
+        help=
+        "Add a shortcut to pdf2doi in the right-click context menu of Windows. You can copy the identifier and/or bibtex entry of a pdf file (or all pdf files in a folder) into the clipboard by just right clicking on it! NOTE: this feature is only available on Windows."
+    )
+    parser.add_argument(
+        "-uninstall--right--click",
+        dest="uninstall_right_click",
+        action="store_true",
+        help=
+        "Uninstall the right-click context menu functionalities. NOTE: this feature is only available on Windows."
+    )
 
     args = parser.parse_args()
 
     # Setup logging
-    config.set('verbose',
-               args.verbose)  # store the desired verbose level in the global config of pdf2doi. This will automatically update the logger verbosity
+    config.set(
+        'verbose', args.verbose
+    )  # store the desired verbose level in the global config of pdf2doi. This will automatically update the logger verbosity
 
     # If the command -install--right--click was specified, it sets the right keys in the system registry
     if args.install_right_click:
@@ -328,7 +410,9 @@ def main():
         target = args.path
 
     if target == "":
-        print("Error: the following arguments are required: path. Type \'pdf2doi --h\' for a list of commands.")
+        print(
+            "Error: the following arguments are required: path. Type \'pdf2doi --h\' for a list of commands."
+        )
         return
 
     if not (path.exists(target)):
@@ -340,22 +424,26 @@ def main():
     if args.id_input_box:
         import easygui
         identifier = easygui.enterbox(
-            f"Please specify the identifier (i.e. DOI or arxiv ID) of the file:\n '{target}' \n\n(this will be stored in the file metadata labelled '\\pdf2doi_identifier')")
+            f"Please specify the identifier (i.e. DOI or arxiv ID) of the file:\n '{target}' \n\n(this will be stored in the file metadata labelled '\\pdf2doi_identifier')"
+        )
         args.identifier = identifier
     # If the command -id was specified, and if the user provided a valid string, we call the sub-routine to store the string passed by the user into the metadata of the file indicated by the user
     # Nothing else will be done
     if args.identifier or args.identifier == "":
         if isinstance(args.identifier, str):
-            result = finders.add_found_identifier_to_metadata(target, args.identifier)
+            result = finders.add_found_identifier_to_metadata(
+                target, args.identifier)
             if args.id_input_box and len(result) > 1:
                 if result[0] == False:
                     easygui.msgbox(result[1])
         return
 
-    config.set('replace_arxivID_by_DOI_when_available', not(args.no_arxiv2doi))
+    config.set('replace_arxivID_by_DOI_when_available',
+               not (args.no_arxiv2doi))
     config.set('websearch', not (args.no_web_search))
     config.set('webvalidation', not (args.no_web_validation))
-    config.set('save_identifier_metadata', not (args.no_store_identifier_metadata))
+    config.set('save_identifier_metadata',
+               not (args.no_store_identifier_metadata))
 
     if args.google_results:
         config.set('numb_results_google_search', args.google_results)
@@ -367,13 +455,17 @@ def main():
         results = [results]
     for result in results:
         if result['identifier']:
-            print('{:<15s} {:<40s} {:<10s}\n'.format(result['identifier_type'], result['identifier'], result['path']))
+            print('{:<15s} {:<40s} {:<10s}\n'.format(result['identifier_type'],
+                                                     result['identifier'],
+                                                     result['path']))
         else:
-            print('{:<15s} {:<40s} {:<10s}\n'.format('n.a.', 'n.a.', result['path']))
+            print('{:<15s} {:<40s} {:<10s}\n'.format('n.a.', 'n.a.',
+                                                     result['path']))
 
             # Call the function save_identifiers. If args.filename_identifiers is a valid string, it will save all found identifiers in a text file with that name.
     # If args.save_doi_clipboard is true, it will copy all identifiers into the clipboard. Otherwise, it will do nothing
-    save_identifiers(args.filename_identifiers, results, args.save_doi_clipboard)
+    save_identifiers(args.filename_identifiers, results,
+                     args.save_doi_clipboard)
 
     return
 
