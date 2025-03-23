@@ -173,7 +173,7 @@ def pdf2doi_singlefile(file):
     return result
 
 
-def __find_doi(file: io.IOBase) -> dict:
+def __find_doi(file: io.IOBase, google_search=False) -> dict:
     logger = logging.getLogger("pdf2doi")
 
     # Several methods are now applied to find a valid identifier in the .pdf file identified by filename
@@ -203,6 +203,9 @@ def __find_doi(file: io.IOBase) -> dict:
         f"Method #3: Looking for a valid identifier in the document text...")
     result = finders.find_identifier(file, method="document_text")
     if result['identifier']:
+        return result
+
+    if not google_search:
         return result
 
     # Fourth method: We look for possible titles of the paper, do a google search with them,
